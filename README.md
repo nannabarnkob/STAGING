@@ -1,3 +1,3 @@
 # STAGING
 
-Code for my bachelorproject :)
+Code for my bachelorproject
