@@ -6,7 +6,7 @@
 
 echo start at `date`
 
-cd $PBS_O_WORKDIR
+#cd $PBS_O_WORKDIR
 source Settings.sh
 
 module load tools
@@ -24,8 +24,8 @@ STAR --genomeDir $genomeDir \
   --twopassMode Basic \
   --quantMode TranscriptomeSAM GeneCounts \
   --outSAMtype BAM Unsorted \
-  --outFileNamePrefix $sample_name \
-  --outSAMmapqUnique 60 \
+  --outFileNamePrefix $sample_name"." \
+  --outSAMmapqUnique 60
 
 echo end at `date`
 

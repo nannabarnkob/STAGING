@@ -10,26 +10,27 @@ cd $PBS_O_WORKDIR
 source Settings.sh
 
 module load tools
+module load ngs
 module load oracle_jdk/1.8.0_144
+module load gatk/4.beta.6
 
 runDir=$sample_dir/04.BaseRecalibration
 mkdir $runDir
 cd $runDir
 
-java -jar $gatk_launch \ 
-    -T BaseRecalibrator \
-    -R $hg38 \
-    -I $SplitNCigarReads_dir/${sample_name}.split.bam \
-    -knownSites $dbsnp \
-    -knownSites $knownIndels \
-    -o $BaseRecalibration_dir/${sample_name}.recal_data.table
+#java -jar $gatk_launch BaseRecalibrator \
+ #   -R $hg38 \
+  #  -I $SplitNCigarReads_dir/${sample_name}.split.bam \
+   # -knownSites $dbsnp \
+    #-knownSites $knownIndels \
+    #-L $transcript_intervals \
+    #-O $BaseRecalibration_dir/${sample_name}.recal_data.table
 
-java -jar $gatk_launch \
-    -T PrintReads \
+java -jar $gatk_launch ApplyBQSR \
     -R $hg38 \
     -I $SplitNCigarReads_dir/${sample_name}.split.bam \
-    -BQSR $BaseRecalibration_dir/${sample_name}.recal_data.table \
-    -o $BaseRecalibration_dir/${sample_name}.recalibrated.bam
+    --bqsr_recal_file $BaseRecalibration_dir/${sample_name}.recal_data.table \
+    -O $BaseRecalibration_dir/${sample_name}.recalibrated.bam
 
 echo end at `date`
 

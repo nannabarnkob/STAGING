@@ -17,7 +17,7 @@ mkdir $runDir
 cd $runDir
 
 
-java -jar $picard AddOrReplaceReadGroups I=$alignment_dir/${sample_name}Aligned.out.bam O=$PicardProcessing_dir/${sample_name}.rg_added_sorted.bam SO=coordinate RGID=id RGLB=library RGPL=platform RGPU=machine RGSM=sample 
+java -jar $picard AddOrReplaceReadGroups I=$alignment_dir/${sample_name}Aligned.out.bam O=$PicardProcessing_dir/${sample_name}.rg_added_sorted.bam SO=coordinate RGID=id RGLB=library RGPL=platform RGPU=machine RGSM=${sample_name} 
 
 java -jar $picard MarkDuplicates I=$PicardProcessing_dir/${sample_name}.rg_added_sorted.bam O=$PicardProcessing_dir/${sample_name}.dedupped.bam  CREATE_INDEX=true VALIDATION_STRINGENCY=SILENT M=output.metrics 
 
