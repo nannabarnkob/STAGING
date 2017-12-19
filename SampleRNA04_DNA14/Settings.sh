@@ -6,7 +6,7 @@ DNA_match=DNA14
 analysis_name=$sample_name"_"$DNA_match
 
 # useful paths 
-sample_dir=/home/projects/dp_00005/data/nanbar/SampleRuns/Sample09_05
+sample_dir=/home/projects/dp_00005/data/nanbar/SampleRuns/$analysis_name
 genomeDir=$sample_dir/00.GenomeDir                          # Step 00
 alignment_dir=$sample_dir/01.Alignment                      # Step 01 
 PicardPreprocessing_dir=$sample_dir/02.PicardPreprocessing  # Step 02 
@@ -14,6 +14,9 @@ SplitNCigarReads_dir=$sample_dir/03.SplitNCigarReads        # Step 03
 BaseRecalibration_dir=$sample_dir/04.BaseRecalibration      # Step 04 
 HC_dir=$sample_dir/05a.HaplotypeCaller                      # Step 05a
 Mutect2_dir=$sample_dir/05b.Mutect2                         # Step 05b
+HC_filtered_dir=$sample_dir/06a.VariantFiltration           # Step 06a
+Mutect2_filtered_dir=$sample_dir/06b.FilterMutectCalls      # Step 06b
+annotation_dir=$sample_dir/07.Annotation                    # Step 07
 
 # data files 
 raw_tumor_R1=/home/projects/dp_00005/data/RNAseq/Staging04_RNA_S8_R1_0005.fastq.gz
@@ -35,6 +38,12 @@ knownIndels=/home/projects/dp_00005/data/references/hg38/hg38bundle/Mills_and_10
 
 # 5b. For Mutect2 
 gnomad=/home/databases/gnomad_data/vcf/exomes/gnomad.exomes.r2.0.1.sites.vcf.gz
+
+# 7. For Annotation 
+annovar=/services/tools/annovar/2016feb01/table_annovar.pl
+annovar_humandb=/home/projects/dp_00005/people/wima/ANNOVAR/humandb
+annotation_cache_dir=/home/databases/variant_effect_predictor/.vep/
+exon_locations=/home/projects/dp_00005/data/references/exon_locations.bed
 
 # tools 
 picard=/services/tools/picard-tools/2.9.1/picard.jar
