@@ -307,20 +307,19 @@ task VariantFiltration_RNA {
   Int cpu=2
 
   command {
-    java -Duser.country=en_US.UTF-8 -Duser.language=en_US.UTF-8 \
-      -jar ${GATK} \
-      -T VariantFiltration \
+    ${GATK} --java-options "-Xmx10g -Duser.country=en_US.UTF-8 -Duser.language=en_US.UTF-8" VariantFiltration \
       -R ${ref_fa} \
       -V ${in_vcf} \
       -window 35 \
       -cluster 3 \
-      -filterName FS \
-      -filter "FS > 30.0" \
-      -filterName QD \
-      -filter "QD < 2.0" \
-      -o ${out_vcf_name}
- }
-  output {
+      --filter-expression "FS > 30.0" \
+      --filter-name "FS" \
+      --filter-expression "QD < 2.0" \
+      --filter-name "QD" \
+       -O ${out_vcf_name} \
+   }
+ 
+   output {
     File out_vcf = "${out_vcf_name}"
     File out_vcf_idx = "${out_vcf_name}.tbi"
   }
