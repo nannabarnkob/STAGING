@@ -89,18 +89,15 @@ task ApplyRecalibrationFilter {
   Float filter_level
 
   command {
-    java -XX:GCTimeLimit=50 -XX:GCHeapFreeLimit=10 -Xmx8000m \
-      -Duser.country=en_US.UTF-8 -Duser.language=en_US.UTF-8 \
-      -jar ${GATK} \
-      -T ApplyRecalibration \
+   ${GATK} --java-options "-XX:GCTimeLimit=50 -XX:GCHeapFreeLimit=10 -Xmx8000m  -Duser.country=en_US.UTF-8 -Duser.language=en_US.UTF-8" ApplyVQSR \
       -R ${ref_fa} \
-      -input ${in_vcf} \
+      -V ${in_vcf} \
       -L ${wgs_calling_interval_list} \
       -mode ${mode} \
-      --ts_filter_level ${filter_level} \
-      -recalFile ${recal_file} \
-      -tranchesFile ${tranches_file} \
-      -o "${out_basename}.g.vcf.gz"
+      --truth-sensitivity-filter-level ${filter_level} \
+      --recal-file ${recal_file} \
+      --tranches-file ${tranches_file} \
+      -O "${out_basename}.g.vcf.gz"
   }
 
   runtime {
