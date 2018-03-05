@@ -152,10 +152,11 @@ task FilterMutectCalls {
   File dbSNP_vcf_idx
 
   command {
-    ${GATK4_LAUNCH} --javaOptions "-Xmx10g -Duser.country=en_US.UTF-8 -Duser.language=en_US.UTF-8" FilterMutectCalls \
+    # For some reason, dbSNP is not recognized in FilterMutectCalls GATK-4.0.1.1. This means that this line was removed:  
+    #   --dbsnp ${dbSNP_vcf} \
+    ${GATK4_LAUNCH} --java-options "-Xmx10g -Duser.country=en_US.UTF-8 -Duser.language=en_US.UTF-8" FilterMutectCalls \
       -V ${in_vcf} \
       -O ${sample_name}_MuTect2_filtered.vcf.gz \
-      --dbsnp ${dbSNP_vcf} \
       --contamination_fraction_to_filter ${default=0 contamination} \
       --normal_artifact_lod 0.0 \
       --tumor_lod 6.0 \
@@ -199,21 +200,25 @@ task MuTect2 {
   File dbSNP_vcf_idx
 
   command {
-    ${GATK4_LAUNCH} --javaOptions "-Xms5g -Xmx100g -Duser.country=en_US.UTF-8 -Duser.language=en_US.UTF-8" Mutect2 \
-      -jdk_deflater \
-      -jdk_inflater \
+    # NB: dbSNP is not used in MuTect2 anymore either (as in Filter...), so this line is removed. Also, threads has changed, probably to --native-pair-hmm-threads, but I don't know  
+    # exactly what this means, so the threads argument has been deleted - default for --native-pair-hmm-threads is 4 so this will affect speed until I know what to use 
+    #  --dbsnp ${dbSNP_vcf} \
+    #  -threads ${cpu} \
+    # Also I don't know how the jdk-arguments affect the call 
+    
+    ${GATK4_LAUNCH} --java-options "-Xms5g -Xmx100g -Duser.country=en_US.UTF-8 -Duser.language=en_US.UTF-8" Mutect2 \
+      -jdk-deflater \
+      -jdk-inflater \
       -R ${ref_fa} \
       -I ${in_bam_tumor} \
       -tumor ${sample_name_tumor} \
       -I ${in_bam_normal} \
       -normal ${sample_name_normal} \
-      --dbsnp ${dbSNP_vcf} \
-      --dontUseSoftClippedBases \
+      --dont-use-soft-clipped-bases \
       -O ${sample_name}_MuTect2.vcf.gz \
-      --germline_resource ${gnomad_exome_vcf} \
+      --germline-resource ${gnomad_exome_vcf} \
       -L ${transcript_intervals} \
-      -threads ${cpu} \
-      --contamination_fraction_to_filter ${default=0 contamination}
+      --contamination-fraction-to-filter ${default=0 contamination}
   }
   runtime {
     cpu: cpu
@@ -269,8 +274,7 @@ task SplitNCigarReads {
   command {
     # Run options are set to follow the GATK best practice for RNAseq. data.
     # NB: Added Reassigning mapping quality step 
-    /home/projects/dp_00005/apps/src/gatk-4.0.1.1/gatk4-launch \
-      SplitNCigarReads \
+    ${GATK4_LAUNCH} SplitNCigarReads \
       -R ${ref_fa} \
       -I ${in_bam} \
       -rf ReassignOneMappingQuality \ 
@@ -329,7 +333,7 @@ task UnzipAndSplit {
   File PIGZ
   String sample_name
   Int cpu=2
-
+  # THis call determines the amount of shards that are just for scattering 
   # Uncompress while splitting fastq into chuncks of 10E7 reads:
   command {
     ${PIGZ} -dc -p 2 ${in_fastqR1} | split -l 40000000 --additional-suffix=".fastq" - "${sample_name}_1_" &
