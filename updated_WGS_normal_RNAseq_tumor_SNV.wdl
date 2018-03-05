@@ -45,21 +45,18 @@ task BuildVQSRModel {
   Int maxgauss
 
   command {
-    java -XX:GCTimeLimit=50 -XX:GCHeapFreeLimit=10 -Xmx8000m \
-      -Duser.country=en_US.UTF-8 -Duser.language=en_US.UTF-8 \
-      -jar ${GATK} \
-      -T VariantRecalibrator \
+    ${GATK} --java-options "-XX:GCTimeLimit=50 -XX:GCHeapFreeLimit=10 -Xmx8000m  -Duser.country=en_US.UTF-8 -Duser.language=en_US.UTF-8" VariantRecalibrator \
       -R ${ref_fa} \
       -input ${in_vcf} \
       -L ${wgs_calling_interval_list} \
-      -resource:${sep=' -resource:' resources} \
+      -O ${out_basename}.${mode}.recal \
+      --resource:${sep=' --resource:' resources} \
       -an ${sep=' -an ' annotations} \
       -mode ${mode} \
-      --maxGaussians ${maxgauss} \
+      --max-gaussians ${maxgauss} \
       -tranche ${sep=' -tranche ' tranches} \
-      -recalFile ${out_basename}.${mode}.recal \
-      -tranchesFile ${out_basename}.${mode}.tranches \
-      -rscriptFile ${out_basename}.${mode}.plots.R
+      --tranches-file ${out_basename}.${mode}.tranches \
+      --rscript-file ${out_basename}.${mode}.plots.R
   }
 
   runtime {
@@ -263,7 +260,7 @@ task STAR_Map {
 
 # RNAseq specific correction:
 task SplitNCigarReads {
-  File GATK
+  File GATK4_LAUNCH
   String sample_name
   String ref_fa
   File in_bam
@@ -274,7 +271,7 @@ task SplitNCigarReads {
   command {
     # Run options are set to follow the GATK best practice for RNAseq. data.
     # NB: Added Reassigning mapping quality step 
-    /home/projects/dp_00005/apps/src/gatk-4.beta.5/gatk-launch \
+    /home/projects/dp_00005/apps/src/gatk-4.0.1.1/gatk4-launch \
       SplitNCigarReads \
       -R ${ref_fa} \
       -I ${in_bam} \
@@ -815,7 +812,7 @@ task BaseRecalibrator {
   File ref_fa
   File ref_idx
   Int cpu=1
-  File GATK
+  File GATK4_LAUNCH
   String? U_option  # In case a -U option needs to be provided
 
   command {
@@ -823,12 +820,10 @@ task BaseRecalibrator {
     rand=`shuf -i 1-10000000 -n 1`
     mv ${write_lines(sequence_group_interval)} $rand.intervals
 
-    java -XX:GCTimeLimit=50 -XX:GCHeapFreeLimit=10 -XX:+PrintFlagsFinal \
+    ${GATK4_LAUNCH} --javaOptions "-XX:GCTimeLimit=50 -XX:GCHeapFreeLimit=10 -XX:+PrintFlagsFinal \
       -Duser.country=en_US.UTF-8 -Duser.language=en_US.UTF-8 \
       -XX:+PrintGCTimeStamps -XX:+PrintGCDateStamps -XX:+PrintGCDetails \
-      -Xloggc:gc_log.log -Dsamjdk.use_async_io=false -Xmx4000m \
-      -jar ${GATK} \
-      -T BaseRecalibrator \
+      -Xloggc:gc_log.log -Dsamjdk.use_async_io=false -Xmx4000m" BaseRecalibrator \
       -R ${ref_fa} \
       -I ${in_bam} \
       --useOriginalQualities \
