@@ -897,11 +897,9 @@ task GatherBqsrReports {
   File GATK
 
   command {
-    java -Xmx3000m \
-      -Duser.country=en_US.UTF-8 -Duser.language=en_US.UTF-8 \
-      -cp ${GATK} org.broadinstitute.gatk.tools.GatherBqsrReports \
-      I=${sep=' I=' in_bqsr_reports} \
-      O=${out_report_filename}
+      ${GATK} --java-options "-Xmx3000m -Duser.country=en_US.UTF-8 -Duser.language=en_US.UTF-8" GatherBQSRReports \
+      -I ${sep=' -I ' in_bqsr_reports} \
+      -O ${out_report_filename}
     }
   runtime {
     cpu: cpu
