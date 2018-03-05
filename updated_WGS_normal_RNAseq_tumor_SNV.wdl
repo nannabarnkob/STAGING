@@ -122,13 +122,14 @@ task FilterByOrientationBias {
 
   command {
     # Nasty sed replacing hack because of: https://github.com/broadinstitute/gatk/issues/3030
-    sed -r "s/picard\.analysis\.artifacts\.SequencingArtifactMetrics\\\$PreAdapterDetailMetrics/org\.broadinstitute\.hellbender\.tools\.picard\.analysis\.artifacts\.SequencingArtifactMetrics\$PreAdapterDetailMetrics/g" "${pre_adapter_detail_metrics_tumor}" > "gatk_${pre_adapter_detail_metrics_tumor_base}"
+    # The nasty sed hack may not be necessary after the release of GATK-4.0.1.1, but it is not confirmed yet  
+    # sed -r "s/picard\.analysis\.artifacts\.SequencingArtifactMetrics\\\$PreAdapterDetailMetrics/org\.broadinstitute\.hellbender\.tools\.picard\.analysis\.artifacts\.SequencingArtifactMetrics\$PreAdapterDetailMetrics/g" "${pre_adapter_detail_metrics_tumor}" > "gatk_${pre_adapter_detail_metrics_tumor_base}"
 
-    ${GATK4_LAUNCH} --javaOptions "-Xmx10g -Duser.country=en_US.UTF-8 -Duser.language=en_US.UTF-8" FilterByOrientationBias \
+    ${GATK4_LAUNCH} --java-options "-Xmx10g -Duser.country=en_US.UTF-8 -Duser.language=en_US.UTF-8" FilterByOrientationBias \
       -V ${in_vcf} \
       -O ${sample_name}_MuTect2_filtered2.vcf.gz \
       -P "gatk_${pre_adapter_detail_metrics_tumor_base}" \
-      -A 'G/T' -A 'C/T'
+      --artifact-modes 'G/T' --artifact-modes 'C/T'
   }
   runtime {
     cpu: cpu
