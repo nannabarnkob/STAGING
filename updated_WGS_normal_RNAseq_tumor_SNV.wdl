@@ -822,7 +822,7 @@ task BaseRecalibrator {
     rand=`shuf -i 1-10000000 -n 1`
     mv ${write_lines(sequence_group_interval)} $rand.intervals
 
-    ${GATK4_LAUNCH} --javaOptions "-XX:GCTimeLimit=50 -XX:GCHeapFreeLimit=10 -XX:+PrintFlagsFinal \
+    ${GATK4_LAUNCH} --java-options "-XX:GCTimeLimit=50 -XX:GCHeapFreeLimit=10 -XX:+PrintFlagsFinal \
       -Duser.country=en_US.UTF-8 -Duser.language=en_US.UTF-8 \
       -XX:+PrintGCTimeStamps -XX:+PrintGCDateStamps -XX:+PrintGCDetails \
       -Xloggc:gc_log.log -Dsamjdk.use_async_io=false -Xmx4000m" BaseRecalibrator \
@@ -860,22 +860,19 @@ task ApplyBQSR {
 
   command {
     # Write the intervals to a file for better command debugging:
+    # Intervals are weird when executing the script in command-line, but hopefully it works when running the workflow (the random intervals are generated each time and file may be removed?) 
     rand=`shuf -i 1-10000000 -n 1`
     mv ${write_lines(sequence_group_interval)} $rand.intervals
 
-    java -XX:+PrintFlagsFinal -XX:+PrintGCTimeStamps -XX:+PrintGCDateStamps \
-      -Duser.country=en_US.UTF-8 -Duser.language=en_US.UTF-8 \
-      -XX:+PrintGCDetails -Xloggc:gc_log.log -Dsamjdk.use_async_io=false \
-      -XX:GCTimeLimit=50 -XX:GCHeapFreeLimit=10 -Xmx3000m \
-      -jar ${GATK4} ApplyBQSR \
-      --createOutputBamMD5 \
-      --addOutputSAMProgramRecord \
+    ${GATK4} --java-options "-XX:+PrintFlagsFinal -XX:+PrintGCTimeStamps -XX:+PrintGCDateStamps -Duser.country=en_US.UTF-8 -Duser.language=en_US.UTF-8 -XX:+PrintGCDetails -Xloggc:gc_log.log -Dsamjdk.use_async_io=false  -XX:GCTimeLimit=50 -XX:GCHeapFreeLimit=10 -Xmx3000m"  ApplyBQSR \
+      --create-output-bam-md5 \
+      --add-output-sam-program-record \
       -R ${ref_fa} \
       -I ${in_bam} \
-      --useOriginalQualities \
+      --use-original-qualities \
       -O ${out_bam_basename}.bam \
       -bqsr ${recalibration_report} \
-      -SQQ 10 -SQQ 20 -SQQ 30 \
+      ---static-quantized-quals 10 ---static-quantized-quals 20 ---static-quantized-quals 30 \
       -L $rand.intervals
   }
   runtime {
@@ -1130,6 +1127,8 @@ task CheckContamination {
 }
 
 # Call variants on a single sample with HaplotypeCaller to produce a VCF:
+
+
 task HaplotypeCaller {
   File in_bam
   File in_bai
@@ -1143,20 +1142,15 @@ task HaplotypeCaller {
   File GATK
 
   command {
-    java -XX:GCTimeLimit=50 -XX:GCHeapFreeLimit=10 -Xmx8000m \
-      -Duser.country=en_US.UTF-8 -Duser.language=en_US.UTF-8 \
-      -jar ${GATK} \
-      -T HaplotypeCaller \
+      ${GATK} --java-options "-XX:GCTimeLimit=50 -XX:GCHeapFreeLimit=10 -Xmx8000m -Duser.country=en_US.UTF-8 -Duser.language=en_US.UTF-8" HaplotypeCaller \
       -R ${ref_fa} \
-      -o ${vcf_basename}.vcf.gz \
+      -O ${vcf_basename}.vcf.gz \
       -I ${in_bam} \
-      --max_alternate_alleles 3 \
-      -variant_index_parameter 128000 \
-      -variant_index_type LINEAR \
-      -contamination ${default=0 contamination} \
-      --read_filter OverclippedRead \
-      -stand_call_conf 30 \
-      -nct ${cpu} \
+      --max-alternate-alleles 3 \
+      --contamination-fraction-to-filter ${default=0 contamination} \
+      --read-filter OverclippedReadFilter \
+      --standard-min-confidence-threshold-for-calling 30 \
+      --native-pair-hmm-threads ${cpu} \
       -L ${interval_list}
   }
   runtime {
@@ -1222,20 +1216,22 @@ task HaplotypeCaller_RNA {
   File GATK4_LAUNCH
 
   command {
-    ${GATK4_LAUNCH} --javaOptions "-Xms5g -Xmx100g -Duser.country=en_US.UTF-8 -Duser.language=en_US.UTF-8" HaplotypeCaller \
+      ${GATK4_LAUNCH} --java-options "-Xms5g -Xmx100g -Duser.country=en_US.UTF-8 -Duser.language=en_US.UTF-8" HaplotypeCaller \
       -R ${ref_fa} \
       -O ${vcf_basename}.vcf.gz \
       -I ${in_bam} \
-      --max_alternate_alleles 3 \
-      -dontUseSoftClippedBases \
-      -stand_call_conf 20 \
-      -threads ${cpu} \
+      --max-alternate-alleles 3 \
+      --dont-use-soft-clipped-bases \
+      --standard-min-confidence-threshold-for-calling 20 \
+      --contamination-fraction-to-filter 0.0 \
+      --read-filter OverclippedReadFilter \
       -L ${interval_list}
 
   # A current bug in GATK4 HaplotypeCaller make the -contamination flag fail:
   # -contamination ${default=0 contamination} \
   # OverclippedRead filter is not implemented yet:
   # --readFilter OverclippedRead \
+  # NB: These things were added, and it should work with GATK-4.0.1.1  but threads were deleted because of the update 
   }
   runtime {
     cpu: cpu
