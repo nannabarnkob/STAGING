@@ -215,6 +215,7 @@ task MuTect2 {
       -I ${in_bam_normal} \
       -normal ${sample_name_normal} \
       --dont-use-soft-clipped-bases \
+      --native-pair-hmm-threads ${cpu} \
       -O ${sample_name}_MuTect2.vcf.gz \
       --germline-resource ${gnomad_exome_vcf} \
       -L ${transcript_intervals} \
@@ -273,14 +274,12 @@ task SplitNCigarReads {
 
   command {
     # Run options are set to follow the GATK best practice for RNAseq. data.
-    # NB: Added Reassigning mapping quality step 
+    # NB (XXJAN18): Added Reassigning mapping quality step
+    # NB (07MAR18): This cannot work with the new version and added --outSAMmapqUnique 60 in STAR call according to https://github.com/bcbio/bcbio-nextgen/issues/2163 
+    # It does state that this may produce issues downstream 
     ${GATK4_LAUNCH} SplitNCigarReads \
       -R ${ref_fa} \
       -I ${in_bam} \
-      -rf ReassignOneMappingQuality \ 
-      -RMQF 255 \
-      -RMQT 60 \
-      -U ALLOW_N_CIGAR_READS \
       -O ${sample_name}${suffix}.bam
  }
   output {
@@ -815,7 +814,6 @@ task BaseRecalibrator {
   File ref_idx
   Int cpu=1
   File GATK4_LAUNCH
-  String? U_option  # In case a -U option needs to be provided
 
   command {
     # Write the intervals to a file for better command debugging:
@@ -828,12 +826,13 @@ task BaseRecalibrator {
       -Xloggc:gc_log.log -Dsamjdk.use_async_io=false -Xmx4000m" BaseRecalibrator \
       -R ${ref_fa} \
       -I ${in_bam} \
-      --useOriginalQualities \
-      -o ${recalibration_report_filename} \
-      -knownSites ${dbSNP_vcf} \
-      -knownSites ${sep=" -knownSites " known_indels_sites_VCFs} \
-      -L $rand.intervals \
-      ${U_option}
+      --use-original-qualities \
+      -O ${recalibration_report_filename} \
+      --known-sites ${dbSNP_vcf} \
+      --known-sites ${sep=" --known-sites " known_indels_sites_VCFs} \
+      -L $rand.intervals
+      # https://gatkforums.broadinstitute.org/gatk/discussion/11285/how-is-allow-n-cigar-reads-implemented-in-gatk4i
+      # -U ALLOW_N_CIGAR_READS: "that parameter is not necessary in GATK4."
   }
   runtime {
     cpu: cpu
@@ -1127,7 +1126,9 @@ task CheckContamination {
 }
 
 # Call variants on a single sample with HaplotypeCaller to produce a VCF:
-
+# The lines --variant_index_type LINEAR --variant_index_parameter 128000 were deleted because they are only necessary for 3.4 and older  
+# https://gatkforums.broadinstitute.org/gatk/discussion/3893/calling-variants-on-cohorts-of-samples-using-the-haplotypecaller-in-gvcf-mode
+# -thread is replaced with --native-pair-hmm-threads for both HC calls 
 
 task HaplotypeCaller {
   File in_bam
@@ -1162,46 +1163,6 @@ task HaplotypeCaller {
   }
 }
 
-# This is soon to be deleted:
-task HaplotypeCaller_RNA_old {
-  File in_bam
-  File in_bai
-  File interval_list
-  String vcf_basename
-  File ref_dict
-  File ref_fa
-  File ref_idx
-  Float? contamination
-  Int cpu=28
-  File GATK
-
-  command {
-    java -XX:GCTimeLimit=50 -XX:GCHeapFreeLimit=10 -Xmx20000m \
-      -Duser.country=en_US.UTF-8 -Duser.language=en_US.UTF-8 \
-      -jar ${GATK} \
-      -T HaplotypeCaller \
-      -R ${ref_fa} \
-      -o ${vcf_basename}.vcf.gz \
-      -I ${in_bam} \
-      --max_alternate_alleles 3 \
-      -variant_index_parameter 128000 \
-      -variant_index_type LINEAR \
-      -stand_call_conf 20 \
-      -dontUseSoftClippedBases \
-      -contamination ${default=0 contamination} \
-      --read_filter OverclippedRead \
-      -nct 5 \
-      -L ${interval_list}
- }
-  output {
-    File out_vcf = "${vcf_basename}.vcf.gz"
-    File out_vcf_idx = "${vcf_basename}.vcf.gz.tbi"
-  }
-  runtime {
-    cpu: cpu
-  }
-}
-
 # Call variants on a single RNAseq sample with HaplotypeCaller to produce a VCF:
 task HaplotypeCaller_RNA {
   File in_bam
@@ -1225,13 +1186,14 @@ task HaplotypeCaller_RNA {
       --standard-min-confidence-threshold-for-calling 20 \
       --contamination-fraction-to-filter 0.0 \
       --read-filter OverclippedReadFilter \
+      --native-pair-hmm-threads ${cpu} \
       -L ${interval_list}
 
   # A current bug in GATK4 HaplotypeCaller make the -contamination flag fail:
   # -contamination ${default=0 contamination} \
   # OverclippedRead filter is not implemented yet:
   # --readFilter OverclippedRead \
-  # NB: These things were added, and it should work with GATK-4.0.1.1  but threads were deleted because of the update 
+  # NB: These things were added, and it should work with GATK-4.0.1.1  but threads were deleted and replaced with native-pair-hmm-threads because of the update 
   }
   runtime {
     cpu: cpu
@@ -1282,17 +1244,14 @@ task ValidateVCF {
   File GATK
 
   command {
-    java -Xmx8g \
-      -Duser.country=en_US.UTF-8 -Duser.language=en_US.UTF-8 \
-      -jar ${GATK} \
-      -T ValidateVariants \
+      ${GATK} --java-options "-Xmx8g  -Duser.country=en_US.UTF-8 -Duser.language=en_US.UTF-8" ValidateVariants \ 
       -V ${in_vcf} \
       -R ${ref_fa} \
-      --validationTypeToExclude ALLELES \
-      --reference_window_stop 208 -U  \
+      --validation-type-to-exclude ALLELES \
       --dbsnp ${dbSNP_vcf} \
       -L ${wgs_calling_interval_list} \
-      --validationTypeToExclude CHR_COUNTS  ## At the moment this validation is excluded because of known problems e.g. https://gatkforums.broadinstitute.org/gatk/discussion/10808/validatevariants-error-on-low-coverage-wgs-variant-calling and https://gatkforums.broadinstitute.org/gatk/discussion/9087/haplotype-caller-generated-vcf-cannot-be-validated
+      --validation-type-to-exclude CHR_COUNTS  
+      ## At the moment this validation is excluded because of known problems e.g. https://gatkforums.broadinstitute.org/gatk/discussion/10808/validatevariants-error-on-low-coverage-wgs-variant-calling and https://gatkforums.broadinstitute.org/gatk/discussion/9087/haplotype-caller-generated-vcf-cannot-be-validated
   }
   runtime {
     cpu: cpu
@@ -1394,6 +1353,110 @@ command <<<
     File out_bai = "${out_basename}.bai"
   }
 }
+
+task NormalizeVCF {
+  File in_vcf
+  String out_basename
+  Int cpu=1
+
+  # get data ready for ANNOVAR
+  command {
+    module load tools
+    module load vt/0.5772
+    less ${in_vcf} \
+     | sed 's/ID=AD,Number=./ID=AD,Number=R/' \
+     | vt -s - -o ${out_basename}.norm.vcf && \
+  }
+  runtime {
+    cpu: cpu
+  }
+  output {
+    File out_vcf = "${out_basename}.norm.vcf"
+  }
+}
+task AnnotateANNOVAR {
+  File ref_fa
+  File ref_idx
+  File ref_dict
+  File in_vcf
+  File annovar
+  File annovar_humandb
+  String annovar_protocol
+  String out_basename
+  Int cpu=1
+
+command { 
+  perl ${annovar} ${in_vcf} ${annovar_humandb} -buildver hg19 \
+    -out ${in_vcf}.annovar.vcf \
+    -protocol ${annovar_protocol} \
+    -operation gx,f,f,f,f,f,f,f -nastring . -vcfinput
+  }
+  runtime {
+    cpu: cpu
+  }
+  output {
+    File out_vcf = "${out_basename}.annovar.vcf"
+  }
+}
+
+
+task AnnotateVEP {
+  File ref_fa
+  File ref_idx
+  File ref_dict
+  File in_vcf
+  File annotation_cache_dir
+  String out_basename
+  Int cpu=1
+  File VEP
+  File vep_database_fasta
+
+command { 
+  
+  ${VEP} -i ${in_vcf} \
+   --force_overwrite \
+   --everything \
+   --offline \
+   --fasta ${vep_database_fasta} \
+   --assembly GrCh37 \
+   --vcf -o ${in_vcf}.vep.vcf \
+   --cache --dir ${annotation_cache_dir} \
+  }
+  runtime {
+    cpu: cpu
+  }
+  output {
+    File out_vcf = "${out_basename}.vep.vcf"
+  }
+}
+
+#Old settings: --assembly GRCh37 --port 3337 \
+#   --sift b --polyphen b --symbol --numbers --biotype --total_length \
+#   --stats_text --fork 28 \
+#   --fields Consequence,Distance,Codons,Amino_acids,Gene,SYMBOL,Feature,Feature_type,EXON,PolyPhen,SIFT,Protein_position,BIOTYPE
+#vep -i $norm_vcf --force_overwrite --everything -o $annotation_dir/vep_paneled_genes.vcf --vcf --cache --dir $annotation_cache_dir --offline --fasta $vep_database_fasta --assembly GRCh38
+
+task MakeExcelSheet {
+  File in_vcf
+  String out_basename
+  Int cpu=1
+  File GATK
+  File python_to_vcf_script 
+
+command { 
+  module load anaconda3/4.4.0
+  ${GATK} CountVariantsSpark -V ${in_vcf} -O ${in_vcf}.variantCount
+  python ${python_to_vcf_script} ${in_vcf}
+  
+  }
+  runtime {
+    cpu: cpu
+  }
+  output {
+    File out_excel = "${out_basename}.xlsx"
+    File out_counts = "${out_basename}.variantCount"
+  }
+}
 #############################
 ### TASK DEFINITIONS ENDS ###
 #############################
@@ -1470,6 +1533,15 @@ workflow WGS_normal_RNAseq_tumor_SNV_wf {
   File trimmomatic
   File trimmomatic_adapters
   File star
+  File annovar 
+  File VEP 
+
+  # For annotation: 
+  File annovar_humandb
+  String annovar_protocol
+  File python_to_vcf_script
+  File vep_database_fasta
+  File annotation_cache_dir
 
   # Custom hacks:
   String bwa_commandline = bwa + " mem -K 100000000 -p -v 3 -t 28 -Y $bash_ref_fa"
@@ -1633,7 +1705,7 @@ workflow WGS_normal_RNAseq_tumor_SNV_wf {
     # Generate the recalibration model by interval:
     call BaseRecalibrator as BaseRecalibrator_normal {
       input:
-        GATK=gatk,
+        GATK4_LAUNCH=gatk,
         in_bam = SortAndFixSampleBam_normal.out_bam,
         in_bai = SortAndFixSampleBam_normal.out_bai,
         recalibration_report_filename = base_file_name_normal + ".recal_data.csv",
@@ -1913,6 +1985,46 @@ workflow WGS_normal_RNAseq_tumor_SNV_wf {
       wgs_calling_interval_list = wgs_calling_interval_list
   }
 
+  # Normalize VCF
+  call NormalizeVCF as NormalizeVCF_normal {
+    input:
+       in_vcf = ApplyRecalibrationFilterForSNPs_normal.out_vcf,
+       out_basename = base_file_name_normal
+  }
+
+  call AnnotateANNOVAR as AnnotateANNOVAR_normal {
+    input:
+        annovar = annovar, 
+        annovar_humandb = annovar_humandb,
+        annovar_protocol = annovar_protocol,
+        out_basename = base_file_name_normal,
+        ref_dict = ref_dict,
+        ref_fa = ref_fa,
+        ref_idx = ref_idx,
+        in_vcf = NormalizeVCF_normal.out_vcf
+  }    
+
+  call AnnotateVEP as AnnotateVEP_normal {
+    input:
+        ref_dict = ref_dict,
+        ref_fa = ref_fa,
+        ref_idx = ref_idx,
+        in_vcf = AnnotateANNOVAR_normal.out_vcf,
+        annotation_cache_dir = annotation_cache_dir,
+        out_basename = base_file_name_normal,
+        vep_database_fasta = vep_database_fasta,
+        VEP = VEP,
+        vep_database_fasta = vep_database_fasta 
+  }    
+ 
+ call MakeExcelSheet as MakeExcelSheet_normal {
+   input:
+      in_vcf = AnnotateVEP_normal.out_vcf,
+      python_to_vcf_script = python_to_vcf_script, 
+      out_basename = base_file_name_normal,
+      GATK = gatk 
+  }
+
 #########################
 ### DNA only part end ###
 #########################
@@ -1987,7 +2099,8 @@ workflow WGS_normal_RNAseq_tumor_SNV_wf {
     # Use SplitNCigarReads for best practices on RNAseq data.
     # It appears to be important to run this before "MergeBamAlignment". See here: https://gatkforums.broadinstitute.org/gatk/discussion/9975/splitntrim-errors
     call SplitNCigarReads as SplitNCigarReads_tumor {
-      input: GATK=gatk,
+      input: 
+        GATK4_LAUNCH=gatk,
         sample_name = sample_name + '_tumor',
         ref_fa=ref_fa,
         in_bam=SortAndFixReadGroupBam_tumor_pre.out_bam,
@@ -2083,11 +2196,15 @@ workflow WGS_normal_RNAseq_tumor_SNV_wf {
   }
 
   # Perform Base Quality Score Recalibration (BQSR) on the sorted BAM in parallel:
+  # Deleted: 
+  #      U_option = "-U ALLOW_N_CIGAR_READS"
+  # because it is currently not supported in GATK4 
+  
   scatter (subgroup in CreateSequenceGroupingTSV_tumor.sequence_grouping) {
     # Generate the recalibration model by interval:
     call BaseRecalibrator as BaseRecalibrator_tumor {
       input:
-        GATK=gatk,
+        GATK4_LAUNCH=gatk,
         in_bam = SortAndFixSampleBam_tumor.out_bam,
         in_bai = SortAndFixSampleBam_tumor.out_bai,
         recalibration_report_filename = base_file_name_tumor + ".recal_data.csv",
@@ -2099,7 +2216,6 @@ workflow WGS_normal_RNAseq_tumor_SNV_wf {
         ref_dict = ref_dict,
         ref_fa = ref_fa,
         ref_idx = ref_idx,
-        U_option = "-U ALLOW_N_CIGAR_READS"
     }
   }
 
@@ -2358,6 +2474,87 @@ workflow WGS_normal_RNAseq_tumor_SNV_wf {
       in_vcf_idx = FilterMutectCalls.out_vcf_idx,
       pre_adapter_detail_metrics_tumor = CollectAggregationMetrics_tumor.pre_adapter_detail_metrics
    }
+
+
+  # Normalize VCF
+  call NormalizeVCF as NormalizeVCF_tumor {
+    input:
+       in_vcf = VariantFiltration_RNA.out_vcf,
+       out_basename = base_file_name_tumor
+  }
+
+  call AnnotateANNOVAR as AnnotateANNOVAR_tumor {
+    input:
+        annovar = annovar, 
+        annovar_humandb = annovar_humandb,
+        annovar_protocol = annovar_protocol,
+        out_basename = base_file_name_tumor,
+        ref_dict = ref_dict,
+        ref_fa = ref_fa,
+        ref_idx = ref_idx,
+        in_vcf = NormalizeVCF_tumor.out_vcf
+  }    
+
+  call AnnotateVEP as AnnotateVEP_tumor {
+    input:
+        ref_dict = ref_dict,
+        ref_fa = ref_fa,
+        ref_idx = ref_idx,
+        in_vcf = AnnotateANNOVAR_tumor.out_vcf,
+        annotation_cache_dir = annotation_cache_dir,
+        out_basename = base_file_name_tumor,
+        vep_database_fasta = vep_database_fasta,
+        VEP = VEP,
+        vep_database_fasta = vep_database_fasta 
+  }    
+ 
+ call MakeExcelSheet as MakeExcelSheet_tumor {
+   input:
+      python_to_vcf_script = python_to_vcf_script, 
+      in_vcf = AnnotateVEP_tumor.out_vcf,
+      out_basename = base_file_name_tumor,
+      GATK = gatk 
+  }
+  
+  # Normalize VCF
+  call NormalizeVCF as NormalizeVCF_mutect {
+    input:
+       in_vcf = FilterByOrientationBias.out_vcf,
+       out_basename = base_file_name_tumor + "_mutect"
+  }
+
+  call AnnotateANNOVAR as AnnotateANNOVAR_mutect {
+    input:
+        annovar = annovar, 
+        annovar_humandb = annovar_humandb,
+        annovar_protocol = annovar_protocol,
+        out_basename = base_file_name_tumor + "_mutect",
+        ref_dict = ref_dict,
+        ref_fa = ref_fa,
+        ref_idx = ref_idx,
+        in_vcf = NormalizeVCF_mutect.out_vcf
+  }    
+
+  call AnnotateVEP as AnnotateVEP_mutect {
+    input:
+        ref_dict = ref_dict,
+        ref_fa = ref_fa,
+        ref_idx = ref_idx,
+        in_vcf = AnnotateANNOVAR_mutect.out_vcf,
+        out_basename = base_file_name_tumor + "_mutect",
+        annotation_cache_dir = annotation_cache_dir,
+        vep_database_fasta = vep_database_fasta,
+        VEP = VEP,
+        vep_database_fasta = vep_database_fasta 
+  }    
+ 
+ call MakeExcelSheet as MakeExcelSheet_mutect {
+   input:
+      python_to_vcf_script = python_to_vcf_script,
+      in_vcf = AnnotateVEP_mutect.out_vcf,
+      out_basename = base_file_name_tumor + "_mutect",
+      GATK = gatk 
+  }
 #############################
 ### SOMATIC VARIANTS ENDS ###
 #############################
@@ -2407,5 +2604,17 @@ workflow WGS_normal_RNAseq_tumor_SNV_wf {
     ApplyRecalibrationFilterForSNPs_normal.*
     VariantFiltration_RNA.*
     FilterByOrientationBias.*
+    NormalizeVCF_normal.*
+    AnnotateANNOVAR_normal.*
+    AnnotateVEP_normal.*
+    MakeExcelSheet_normal.*
+    NormalizeVCF_tumor.*
+    AnnotateANNOVAR_tumor.*
+    AnnotateVEP_tumor.*
+    MakeExcelSheet_tumor.*
+    NormalizeVCF_mutect.*
+    AnnotateANNOVAR_mutect.*
+    AnnotateVEP_mutect.*
+    MakeExcelSheet_mutect.*
     }
 }
