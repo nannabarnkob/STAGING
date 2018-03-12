@@ -871,7 +871,7 @@ task ApplyBQSR {
       --use-original-qualities \
       -O ${out_bam_basename}.bam \
       -bqsr ${recalibration_report} \
-      ---static-quantized-quals 10 ---static-quantized-quals 20 ---static-quantized-quals 30 \
+      --static-quantized-quals 10 --static-quantized-quals 20 --static-quantized-quals 30 \
       -L $rand.intervals
   }
   runtime {
@@ -1244,7 +1244,7 @@ task ValidateVCF {
   File GATK
 
   command {
-      ${GATK} --java-options "-Xmx8g  -Duser.country=en_US.UTF-8 -Duser.language=en_US.UTF-8" ValidateVariants \ 
+      ${GATK} --java-options "-Xmx8g  -Duser.country=en_US.UTF-8 -Duser.language=en_US.UTF-8" ValidateVariants \
       -V ${in_vcf} \
       -R ${ref_fa} \
       --validation-type-to-exclude ALLELES \
@@ -1356,16 +1356,15 @@ command <<<
 
 task NormalizeVCF {
   File in_vcf
+  File ref_fa
+  #File ref_idx
+  File bcftools
   String out_basename
   Int cpu=1
 
   # get data ready for ANNOVAR
   command {
-    module load tools
-    module load vt/0.5772
-    less ${in_vcf} \
-     | sed 's/ID=AD,Number=./ID=AD,Number=R/' \
-     | vt -s - -o ${out_basename}.norm.vcf && \
+    ${bcftools} norm -f ${ref_fa} -m -both ${in_vcf} -o ${out_basename}.norm.vcf
   }
   runtime {
     cpu: cpu
@@ -1989,6 +1988,8 @@ workflow WGS_normal_RNAseq_tumor_SNV_wf {
   call NormalizeVCF as NormalizeVCF_normal {
     input:
        in_vcf = ApplyRecalibrationFilterForSNPs_normal.out_vcf,
+       ref_fa = ref_fa,
+       bcftools = bcftools,
        out_basename = base_file_name_normal
   }
 
@@ -2480,6 +2481,8 @@ workflow WGS_normal_RNAseq_tumor_SNV_wf {
   call NormalizeVCF as NormalizeVCF_tumor {
     input:
        in_vcf = VariantFiltration_RNA.out_vcf,
+       bcftools =  bcftools, 
+       ref_fa = ref_fa,
        out_basename = base_file_name_tumor
   }
 
@@ -2488,10 +2491,10 @@ workflow WGS_normal_RNAseq_tumor_SNV_wf {
         annovar = annovar, 
         annovar_humandb = annovar_humandb,
         annovar_protocol = annovar_protocol,
-        out_basename = base_file_name_tumor,
         ref_dict = ref_dict,
         ref_fa = ref_fa,
         ref_idx = ref_idx,
+        out_basename = base_file_name_tumor,
         in_vcf = NormalizeVCF_tumor.out_vcf
   }    
 
@@ -2520,6 +2523,8 @@ workflow WGS_normal_RNAseq_tumor_SNV_wf {
   call NormalizeVCF as NormalizeVCF_mutect {
     input:
        in_vcf = FilterByOrientationBias.out_vcf,
+       bcftools =  bcftools, 
+       ref_fa = ref_fa, 
        out_basename = base_file_name_tumor + "_mutect"
   }
 
