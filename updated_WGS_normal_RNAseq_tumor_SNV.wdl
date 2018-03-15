@@ -1379,6 +1379,8 @@ task AnnotateANNOVAR {
   File ref_dict
   File in_vcf
   File annovar
+  File annovar_convert2annovar
+  File annovar_annotate_variation
   File annovar_humandb
   String annovar_protocol
   String out_basename
@@ -1386,7 +1388,7 @@ task AnnotateANNOVAR {
 
 command { 
   perl ${annovar} ${in_vcf} ${annovar_humandb} -buildver hg19 \
-    -out ${in_vcf}.annovar.vcf \
+    -out ${out_basename}.norm.annovar \
     -protocol ${annovar_protocol} \
     -operation gx,f,f,f,f,f,f,f -nastring . -vcfinput
   }
@@ -1394,7 +1396,7 @@ command {
     cpu: cpu
   }
   output {
-    File out_vcf = "${out_basename}.annovar.vcf"
+    File out_vcf = "${out_basename}.norm.annovar.hg19_multianno.vcf"
   }
 }
 
@@ -1404,28 +1406,32 @@ task AnnotateVEP {
   File ref_idx
   File ref_dict
   File in_vcf
-  File annotation_cache_dir
+  File perl
+  String annotation_cache_dir
   String out_basename
   Int cpu=1
   File VEP
   File vep_database_fasta
 
 command { 
-  
+  module load perl/5.24.0
+  module load tabix
   ${VEP} -i ${in_vcf} \
    --force_overwrite \
    --everything \
    --offline \
    --fasta ${vep_database_fasta} \
-   --assembly GrCh37 \
-   --vcf -o ${in_vcf}.vep.vcf \
-   --cache --dir ${annotation_cache_dir} \
+   --assembly GRCh37 \
+   --vcf -o ${out_basename}.vep.vcf \
+   --cache --dir ${annotation_cache_dir}
+  bgzip ${out_basename}.vep.vcf && \
+  tabix -p vcf ${out_basename}.vep.vcf.gz
   }
   runtime {
     cpu: cpu
   }
   output {
-    File out_vcf = "${out_basename}.vep.vcf"
+    File out_vcf = "${out_basename}.vep.vcf.gz"
   }
 }
 
@@ -1443,8 +1449,8 @@ task MakeExcelSheet {
   File python_to_vcf_script 
 
 command { 
-  module load anaconda3/4.4.0
-  ${GATK} CountVariantsSpark -V ${in_vcf} -O ${in_vcf}.variantCount
+  module load anaconda3/4.0.0
+  ${GATK} CountVariantsSpark -V ${in_vcf} -O ${out_basename}.variantCount
   python ${python_to_vcf_script} ${in_vcf}
   
   }
@@ -1452,7 +1458,6 @@ command {
     cpu: cpu
   }
   output {
-    File out_excel = "${out_basename}.xlsx"
     File out_counts = "${out_basename}.variantCount"
   }
 }
@@ -1524,6 +1529,7 @@ workflow WGS_normal_RNAseq_tumor_SNV_wf {
   File gatk4_launch
   File python2
   File python3
+  File perl
   File samtools
   File bwa
   File verifyBamID
@@ -1532,15 +1538,19 @@ workflow WGS_normal_RNAseq_tumor_SNV_wf {
   File trimmomatic
   File trimmomatic_adapters
   File star
-  File annovar 
+  File annovar
+  File annovar_convert2annovar
+  File annovar_annotate_variation
   File VEP 
-
+  File vt 
+  File bcftools 
+  
   # For annotation: 
   File annovar_humandb
   String annovar_protocol
   File python_to_vcf_script
   File vep_database_fasta
-  File annotation_cache_dir
+  String annotation_cache_dir
 
   # Custom hacks:
   String bwa_commandline = bwa + " mem -K 100000000 -p -v 3 -t 28 -Y $bash_ref_fa"
@@ -1996,6 +2006,8 @@ workflow WGS_normal_RNAseq_tumor_SNV_wf {
   call AnnotateANNOVAR as AnnotateANNOVAR_normal {
     input:
         annovar = annovar, 
+        annovar_convert2annovar = annovar_convert2annovar,
+        annovar_annotate_variation = annovar_annotate_variation, 
         annovar_humandb = annovar_humandb,
         annovar_protocol = annovar_protocol,
         out_basename = base_file_name_normal,
@@ -2010,10 +2022,10 @@ workflow WGS_normal_RNAseq_tumor_SNV_wf {
         ref_dict = ref_dict,
         ref_fa = ref_fa,
         ref_idx = ref_idx,
+        perl = perl, 
         in_vcf = AnnotateANNOVAR_normal.out_vcf,
         annotation_cache_dir = annotation_cache_dir,
         out_basename = base_file_name_normal,
-        vep_database_fasta = vep_database_fasta,
         VEP = VEP,
         vep_database_fasta = vep_database_fasta 
   }    
@@ -2489,6 +2501,8 @@ workflow WGS_normal_RNAseq_tumor_SNV_wf {
   call AnnotateANNOVAR as AnnotateANNOVAR_tumor {
     input:
         annovar = annovar, 
+        annovar_convert2annovar = annovar_convert2annovar,
+        annovar_annotate_variation = annovar_annotate_variation, 
         annovar_humandb = annovar_humandb,
         annovar_protocol = annovar_protocol,
         ref_dict = ref_dict,
@@ -2503,10 +2517,10 @@ workflow WGS_normal_RNAseq_tumor_SNV_wf {
         ref_dict = ref_dict,
         ref_fa = ref_fa,
         ref_idx = ref_idx,
+        perl = perl, 
         in_vcf = AnnotateANNOVAR_tumor.out_vcf,
         annotation_cache_dir = annotation_cache_dir,
         out_basename = base_file_name_tumor,
-        vep_database_fasta = vep_database_fasta,
         VEP = VEP,
         vep_database_fasta = vep_database_fasta 
   }    
@@ -2532,6 +2546,8 @@ workflow WGS_normal_RNAseq_tumor_SNV_wf {
     input:
         annovar = annovar, 
         annovar_humandb = annovar_humandb,
+        annovar_annotate_variation = annovar_annotate_variation, 
+        annovar_convert2annovar = annovar_convert2annovar,
         annovar_protocol = annovar_protocol,
         out_basename = base_file_name_tumor + "_mutect",
         ref_dict = ref_dict,
@@ -2545,10 +2561,10 @@ workflow WGS_normal_RNAseq_tumor_SNV_wf {
         ref_dict = ref_dict,
         ref_fa = ref_fa,
         ref_idx = ref_idx,
+        perl = perl, 
         in_vcf = AnnotateANNOVAR_mutect.out_vcf,
         out_basename = base_file_name_tumor + "_mutect",
         annotation_cache_dir = annotation_cache_dir,
-        vep_database_fasta = vep_database_fasta,
         VEP = VEP,
         vep_database_fasta = vep_database_fasta 
   }    
